@@ -34,6 +34,10 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 return false;
             }
+            @Override
+public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+    Toast.makeText(MainActivity.this, "HATA: " + error.getDescription(), Toast.LENGTH_LONG).show();
+}
         });
         setContentView(webView);
         webView.loadUrl("file:///android_asset/www/index.html");
