@@ -5,6 +5,12 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
 rootProject.name = 'Tulpar'
 include ':app'
