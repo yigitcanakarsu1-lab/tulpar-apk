@@ -1,0 +1,49 @@
+{
+  "id": "/",
+  "name": "Tulpar",
+  "short_name": "Tulpar",
+  "description": "Tulpar - Gelişmiş Türkçe Yapay Zeka Asistanı ve Sesli Komut Merkezi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/tulpar_square.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Sesli Asistan",
+      "short_name": "Asistan",
+      "description": "Tulpar Sesli Asistan Modunu Başlat",
+      "url": "/?voice=true",
+      "icons": [{ "src": "/favicon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ambiyans Always-On",
+      "short_name": "Ambiyans",
+      "description": "Always-On Hey Tulpar Dinleme Modu",
+      "url": "/?ambient=true",
+      "icons": [{ "src": "/favicon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

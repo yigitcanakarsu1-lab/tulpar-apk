@@ -1,0 +1,6 @@
+{
+  "name": "Tulpar",
+  "description": "Tulpar - Gelişmiş yapay zeka asistanı. Hızlı yanıtlar, sohbet, akıl yürütme, görsel analizi ve sesli iletişim sunar.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,525 @@
+import React, { useState, useEffect, useRef } from "react";
+import { ChatMessage, ChatSession, AppPermissionsConfig } from "./types";
+import { Header, AVAILABLE_MODELS } from "./components/Header";
+import { Sidebar } from "./components/Sidebar";
+import { EmptyChatView } from "./components/EmptyChatView";
+import { MessageItem } from "./components/MessageItem";
+import { ChatInputBar } from "./components/ChatInputBar";
+import { VoiceModeModal } from "./components/VoiceModeModal";
+import { VoicePermissionModal } from "./components/VoicePermissionModal";
+import { AmbientWakeWordScreen } from "./components/AmbientWakeWordScreen";
+import { DEFAULT_PERMISSIONS } from "./utils/voiceCommandDispatcher";
+
+const STORAGE_KEY = "chatgpt_ios_sessions_v1";
+const ACTIVE_SESSION_KEY = "chatgpt_ios_active_id_v1";
+const PERMISSIONS_STORAGE_KEY = "tulpar_permissions_v1";
+
+export default function App() {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentModel, setCurrentModel] = useState<string>(AVAILABLE_MODELS[0].id);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+  const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
+  const [isAmbientModeOpen, setIsAmbientModeOpen] = useState(false);
+
+  // App Permissions & Voice Automation settings
+  const [permissions, setPermissions] = useState<AppPermissionsConfig>(() => {
+    try {
+      const saved = localStorage.getItem(PERMISSIONS_STORAGE_KEY);
+      if (saved) return { ...DEFAULT_PERMISSIONS, ...JSON.parse(saved) };
+    } catch {}
+    return DEFAULT_PERMISSIONS;
+  });
+
+  const handleUpdatePermissions = (newPerms: AppPermissionsConfig) => {
+    setPermissions(newPerms);
+    try {
+      localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify(newPerms));
+    } catch (e) {
+      console.warn("Failed to persist permissions:", e);
+    }
+  };
+
+  // Input state
+  const [input, setInput] = useState("");
+  const [attachedImage, setAttachedImage] = useState<{
+    data: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Load sessions from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed: ChatSession[] = JSON.parse(saved);
+        const normalized = parsed.map((s) => ({
+          ...s,
+          model:
+            s.model === "gemini-2.5-flash" || s.model === "gemini-2.5-flash-lite"
+              ? "gemini-3.8-flash"
+              : s.model || "gemini-3.8-flash",
+        }));
+        setSessions(normalized);
+        const activeId = localStorage.getItem(ACTIVE_SESSION_KEY);
+        if (activeId && normalized.some((s) => s.id === activeId)) {
+          setCurrentSessionId(activeId);
+        } else if (normalized.length > 0) {
+          setCurrentSessionId(normalized[0].id);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load sessions from storage:", e);
+    }
+  }, []);
+
+  // Sync sessions to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+      if (currentSessionId) {
+        localStorage.setItem(ACTIVE_SESSION_KEY, currentSessionId);
+      }
+    } catch (e) {
+      console.warn("Failed to save sessions:", e);
+    }
+  }, [sessions, currentSessionId]);
+
+  // Current session messages
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const messages = currentSession?.messages || [];
+
+  // Scroll to bottom when messages change
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
+  // Start a fresh conversation
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setInput("");
+    setAttachedImage(null);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
+  // Select existing session
+  const handleSelectSession = (id: string) => {
+    setCurrentSessionId(id);
+    setInput("");
+    setAttachedImage(null);
+  };
+
+  // Delete session
+  const handleDeleteSession = (id: string) => {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    if (currentSessionId === id) {
+      setCurrentSessionId(null);
+    }
+  };
+
+  // Clear all sessions
+  const handleClearAllSessions = () => {
+    setSessions([]);
+    setCurrentSessionId(null);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  };
+
+  // Send message
+  const handleSendMessage = async (textOverride?: string) => {
+    const textToSend = textOverride !== undefined ? textOverride : input.trim();
+    const imageToSend = attachedImage;
+
+    if (!textToSend && !imageToSend) return;
+    if (isLoading) return;
+
+    // Reset input states
+    setInput("");
+    setAttachedImage(null);
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: textToSend,
+      image: imageToSend ? { ...imageToSend } : undefined,
+      timestamp: new Date().toISOString(),
+    };
+
+    const assistantMessageId = `asst-${Date.now()}`;
+    const assistantPlaceholder: ChatMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+    };
+
+    let activeId = currentSessionId;
+
+    // If new session, create session record
+    if (!activeId) {
+      const generatedTitle =
+        textToSend.slice(0, 32) || (imageToSend ? "Görsel Analizi" : "Yeni Sohbet");
+      const newSession: ChatSession = {
+        id: `session-${Date.now()}`,
+        title: generatedTitle,
+        messages: [userMessage, assistantPlaceholder],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: currentModel,
+      };
+      setSessions((prev) => [newSession, ...prev]);
+      setCurrentSessionId(newSession.id);
+      activeId = newSession.id;
+    } else {
+      // Append to current session
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === activeId
+            ? {
+                ...s,
+                messages: [...s.messages, userMessage, assistantPlaceholder],
+                updatedAt: new Date().toISOString(),
+              }
+            : s
+        )
+      );
+    }
+
+    setIsLoading(true);
+
+    try {
+      abortControllerRef.current = new AbortController();
+
+      // Gather conversation history
+      const existingMsgs = (currentSession?.messages || []).filter((m) => !m.isError);
+      const historyToSend = [
+        ...existingMsgs.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: textToSend },
+      ];
+
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
+        body: JSON.stringify({
+          messages: historyToSend,
+          model: currentModel,
+          image: imageToSend
+            ? {
+                data: imageToSend.data,
+                mimeType: imageToSend.mimeType,
+              }
+            : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        let errMsg = errJson.error || `Sunucu hatası (${response.status})`;
+        if (
+          errMsg.includes("503") ||
+          errMsg.includes("UNAVAILABLE") ||
+          errMsg.includes("high demand")
+        ) {
+          errMsg =
+            "Yapay zeka modeli geçici bir yoğunluk yaşıyor. Lütfen birkaç saniye sonra tekrar deneyin.";
+        }
+        updateAssistantMessage(activeId!, assistantMessageId, errMsg, true);
+        return;
+      }
+
+      if (!response.body) {
+        throw new Error("Akış yanıtı alınamadı.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let accumulatedText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6).trim();
+          if (data === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.text) {
+              accumulatedText += parsed.text;
+              updateAssistantMessage(activeId!, assistantMessageId, accumulatedText, false);
+            } else if (parsed.error) {
+              updateAssistantMessage(activeId!, assistantMessageId, parsed.error, true);
+              return;
+            }
+          } catch {
+            // Incomplete JSON or malformed line
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        // user aborted
+      } else {
+        const rawErr = String(err?.message || "");
+        let userMsg = rawErr;
+        if (
+          rawErr.includes("503") ||
+          rawErr.includes("UNAVAILABLE") ||
+          rawErr.includes("high demand")
+        ) {
+          userMsg =
+            "Yapay zeka modeli geçici bir yoğunluk yaşıyor. Lütfen Tekrar Dene butonuna tıklayın.";
+        }
+        updateAssistantMessage(
+          activeId!,
+          assistantMessageId,
+          userMsg || "İstek işlenirken bir sorun oluştu.",
+          true
+        );
+      }
+    } finally {
+      setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const updateAssistantMessage = (
+    sessionId: string,
+    messageId: string,
+    content: string,
+    isError: boolean
+  ) => {
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== sessionId) return s;
+        return {
+          ...s,
+          messages: s.messages.map((m) =>
+            m.id === messageId ? { ...m, content, isError } : m
+          ),
+        };
+      })
+    );
+  };
+
+  const handleRetryLast = () => {
+    if (!currentSession) return;
+    const lastUser = [...currentSession.messages].reverse().find((m) => m.role === "user");
+    if (lastUser) {
+      // Remove last assistant error
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === currentSession.id
+            ? {
+                ...s,
+                messages: s.messages.filter((m) => !m.isError),
+              }
+            : s
+        )
+      );
+      handleSendMessage(lastUser.content);
+    }
+  };
+
+  // Voice mode direct query handler
+  const handleSendVoiceQuery = async (queryText: string): Promise<string> => {
+    const userMessage: ChatMessage = {
+      id: `voice-user-${Date.now()}`,
+      role: "user",
+      content: queryText,
+      timestamp: new Date().toISOString(),
+    };
+
+    let activeId = currentSessionId;
+    if (!activeId) {
+      const newSession: ChatSession = {
+        id: `session-${Date.now()}`,
+        title: queryText.slice(0, 32),
+        messages: [userMessage],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: currentModel,
+      };
+      setSessions((prev) => [newSession, ...prev]);
+      setCurrentSessionId(newSession.id);
+      activeId = newSession.id;
+    } else {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === activeId
+            ? {
+                ...s,
+                messages: [...s.messages, userMessage],
+              }
+            : s
+        )
+      );
+    }
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: queryText,
+          model: currentModel,
+          systemInstruction:
+            "Senin adın Tulpar. Konuşma dilinde doğal ve akıcı yanıt veren Türkçe yapay zeka asistanısın. Yanıtlarını kısa, net, konuşma diline uygun ve anlaşılır cümlelerle ver.",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Ses yanıtı alınamadı.");
+      }
+
+      const replyText = data.text || "Anladım, size nasıl yardımcı olabilirim?";
+
+      const assistantMsg: ChatMessage = {
+        id: `voice-asst-${Date.now()}`,
+        role: "assistant",
+        content: replyText,
+        timestamp: new Date().toISOString(),
+      };
+
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === activeId
+            ? {
+                ...s,
+                messages: [...s.messages, assistantMsg],
+              }
+            : s
+        )
+      );
+
+      return replyText;
+    } catch (e: any) {
+      throw e;
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-white text-neutral-900 font-sans antialiased selection:bg-neutral-200">
+      {/* Top Header (Screenshot 1: Menu icon, Model dropdown pill, New chat icon) */}
+      <Header
+        currentModel={currentModel}
+        onSelectModel={setCurrentModel}
+        onOpenSidebar={() => setIsSidebarOpen(true)}
+        onNewChat={handleNewChat}
+        onOpenPermissions={() => setIsPermissionsOpen(true)}
+        onOpenAmbientMode={() => setIsAmbientModeOpen(true)}
+      />
+
+      {/* Slide-out Sidebar Drawer */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        onDeleteSession={handleDeleteSession}
+        onClearAllSessions={handleClearAllSessions}
+        currentModel={currentModel}
+        onOpenPermissions={() => setIsPermissionsOpen(true)}
+        onOpenAmbientMode={() => setIsAmbientModeOpen(true)}
+      />
+
+      {/* Main Chat Scrollable Container */}
+      <main className="relative flex flex-1 flex-col overflow-y-auto">
+        {messages.length === 0 ? (
+          /* Empty Chat State (Screenshot 1: Centered black emblem + bottom suggestions) */
+          <EmptyChatView onSelectSuggestion={(prompt) => handleSendMessage(prompt)} />
+        ) : (
+          /* Active Conversation List */
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col divide-y divide-transparent py-4">
+            {messages.map((msg, index) => {
+              const isLastAssistant =
+                msg.role === "assistant" && index === messages.length - 1;
+              return (
+                <MessageItem
+                  key={msg.id}
+                  message={msg}
+                  onRetry={isLastAssistant && msg.isError ? handleRetryLast : undefined}
+                  isLoading={isLoading && isLastAssistant}
+                />
+              );
+            })}
+            <div ref={messagesEndRef} className="h-4" />
+          </div>
+        )}
+      </main>
+
+      {/* Bottom Floating Pill Input Bar (Screenshot 1 & 3) */}
+      <ChatInputBar
+        input={input}
+        setInput={setInput}
+        attachedImage={attachedImage}
+        setAttachedImage={setAttachedImage}
+        onSendMessage={() => handleSendMessage()}
+        isLoading={isLoading}
+        onOpenVoiceMode={() => setIsVoiceModeOpen(true)}
+      />
+
+      {/* ChatGPT iOS Voice Mode Modal (Screenshot 2) */}
+      <VoiceModeModal
+        isOpen={isVoiceModeOpen}
+        onClose={() => setIsVoiceModeOpen(false)}
+        onSendVoiceQuery={handleSendVoiceQuery}
+        permissions={permissions}
+        onOpenPermissions={() => {
+          setIsVoiceModeOpen(false);
+          setIsPermissionsOpen(true);
+        }}
+        onOpenAmbientMode={() => {
+          setIsVoiceModeOpen(false);
+          setIsAmbientModeOpen(true);
+        }}
+      />
+
+      {/* Voice Permissions & App Launcher Config Modal */}
+      <VoicePermissionModal
+        isOpen={isPermissionsOpen}
+        onClose={() => setIsPermissionsOpen(false)}
+        permissions={permissions}
+        onUpdatePermissions={handleUpdatePermissions}
+        onOpenAmbientMode={() => {
+          setIsPermissionsOpen(false);
+          setIsAmbientModeOpen(true);
+        }}
+      />
+
+      {/* Fullscreen Always-On Siri Ambient Wake-Word Screen */}
+      <AmbientWakeWordScreen
+        isOpen={isAmbientModeOpen}
+        onClose={() => setIsAmbientModeOpen(false)}
+        permissions={permissions}
+        onSendVoiceQuery={handleSendVoiceQuery}
+      />
+    </div>
+  );
+}
