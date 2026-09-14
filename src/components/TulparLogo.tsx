@@ -18,7 +18,7 @@ export const TulparLogo: React.FC<TulparLogoProps> = ({
   if (variant === "white") {
     return (
       <img
-        src="/tulpar_white.png"
+        src="tulpar_white.png"
         alt="Tulpar Amblemi"
         width={size}
         height={size}
@@ -36,7 +36,7 @@ export const TulparLogo: React.FC<TulparLogoProps> = ({
         className={`inline-flex items-center justify-center rounded-2xl bg-white p-1.5 shadow-sm border border-neutral-200/80 overflow-hidden select-none shrink-0 ${className}`}
       >
         <img
-          src="/tulpar_transparent.png"
+          src="tulpar_transparent.png"
           alt="Tulpar Amblemi"
           className="h-full w-full object-contain"
           referrerPolicy="no-referrer"
@@ -53,7 +53,7 @@ export const TulparLogo: React.FC<TulparLogoProps> = ({
         className={`inline-flex items-center justify-center rounded-full bg-neutral-900 p-1 shadow-xs overflow-hidden select-none shrink-0 ${className}`}
       >
         <img
-          src="/tulpar_white.png"
+          src="tulpar_white.png"
           alt="Tulpar Amblemi"
           className="h-full w-full object-contain"
           referrerPolicy="no-referrer"
@@ -66,7 +66,7 @@ export const TulparLogo: React.FC<TulparLogoProps> = ({
   // Default: Direct crisp black rearing Tulpar horse on transparent background
   return (
     <img
-      src="/tulpar_transparent.png"
+      src="tulpar_transparent.png"
       alt="Tulpar Amblemi"
       width={size}
       height={size}
