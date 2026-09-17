@@ -1,0 +1,8 @@
+{
+  "appId": "com.tulpar.ai",
+  "appName": "Tulpar",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
