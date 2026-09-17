@@ -25,15 +25,42 @@ export interface CodeGenerationParams {
   prompt: string;
 }
 
+export interface WebSource {
+  title: string;
+  uri: string;
+  snippet?: string;
+}
+
+export interface GroundingMetadata {
+  webSearchQueries?: string[];
+  sources?: WebSource[];
+  fetchedUrl?: {
+    url: string;
+    title?: string;
+  };
+}
+
+export interface AttachedImage {
+  data: string;
+  mimeType: string;
+  name?: string;
+}
+
+export interface AttachedDoc {
+  name: string;
+  size?: string;
+  mimeType?: string;
+  content?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  image?: {
-    data: string;
-    mimeType: string;
-    name?: string;
-  };
+  image?: AttachedImage;
+  images?: AttachedImage[];
+  doc?: AttachedDoc;
+  groundingMetadata?: GroundingMetadata;
   timestamp: string | Date;
   isError?: boolean;
 }
